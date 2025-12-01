@@ -54,3 +54,13 @@ func GetTaskByID(ctx context.Context, db *pgxpool.Pool, taskID uuid.UUID) (*doma
 	}
 	return &t, nil
 }
+
+// UpdateTaskStatus 更新任务状态
+func UpdateTaskStatus(ctx context.Context, db *pgxpool.Pool, id uuid.UUID, status string) error {
+	_, err := db.Exec(ctx, `
+		UPDATE tasks
+		SET status=$2, updated_at=NOW()
+		WHERE id=$1
+	`, id, status)
+	return err
+}

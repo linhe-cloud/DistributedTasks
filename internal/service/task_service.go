@@ -5,18 +5,21 @@ import (
 	"encoding/json"
 
 	"DistributedTasks/internal/domain"
+	"DistributedTasks/internal/queue"
 	"DistributedTasks/internal/repo"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 )
 
 type TaskService struct {
-	db *pgxpool.Pool
+	db  *pgxpool.Pool
+	rdb *redis.Client
 }
 
-func NewTaskService(db *pgxpool.Pool) *TaskService {
-	return &TaskService{db: db}
+func NewTaskService(db *pgxpool.Pool, rdb *redis.Client) *TaskService {
+	return &TaskService{db: db, rdb: rdb}
 }
 
 type CreateTaskParams struct {
@@ -62,6 +65,8 @@ func (s *TaskService) CreateTask(ctx context.Context, p CreateTaskParams) (uuid.
 	}
 
 	// 即时任务插入首个 TaskRun
+	var taskRunID uuid.UUID
+	var attempt int
 	if p.Type == "immediate" {
 		tr := domain.TaskRun{
 			ID:      uuid.New(),
@@ -72,6 +77,31 @@ func (s *TaskService) CreateTask(ctx context.Context, p CreateTaskParams) (uuid.
 		if err := repo.InsertTaskRun(ctx, s.db, &tr); err != nil {
 			return uuid.Nil, "", err
 		}
+		taskRunID = tr.ID
+		attempt = tr.Attempt
+	}
+
+	// 构造入队消息（最小字段）
+	msg := struct {
+		TaskRunID  uuid.UUID       `json:"task_run_id"`
+		TaskID     uuid.UUID       `json:"task_id"`
+		Attempt    int             `json:"attempt"`
+		Payload    json.RawMessage `json:"payload"`
+		Priority   int             `json:"priority"`
+		QueueName  string          `json:"queue_name"`
+		MaxRetries int             `json:"max_retries"`
+	}{
+		TaskRunID:  taskRunID,
+		TaskID:     taskID,
+		Attempt:    attempt,
+		Payload:    payloadBytes,
+		Priority:   p.Priority,
+		QueueName:  p.QueueName,
+		MaxRetries: ifZero(p.MaxRetries, 3),
+	}
+	b, _ := json.Marshal(msg)
+	if err := queue.EnqueueReady(ctx, s.rdb, p.QueueName, string(b)); err != nil {
+		return uuid.Nil, "", err
 	}
 
 	return taskID, status, nil

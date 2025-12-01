@@ -41,7 +41,7 @@ func main() {
 	defer rdb.Close()
 
 	// 组装服务与路由
-	taskSvc := service.NewTaskService(pool)
+	taskSvc := service.NewTaskService(pool, rdb)
 
 	engine := gin.Default()
 	h := handler.New(taskSvc, pool, rdb)
@@ -55,6 +55,10 @@ func main() {
 	{
 		api.POST("/tasks", h.CreateTask)
 		api.GET("/tasks/:id", h.GetTaskByID)
+
+		// DLQ 管理
+		api.GET("/queues/:name/dlq", h.ListDLQ)
+		api.POST("/queues/:name/dlq/replay", h.ReplayDLQ)
 	}
 
 	log.Printf("starting api server on :%s", cfg.HTTPPort)

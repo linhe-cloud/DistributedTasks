@@ -50,6 +50,7 @@ func EnsureSchema(ctx context.Context, pool *pgxpool.Pool) error {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_task_runs_task_attempt ON task_runs(task_id, attempt);`,
+		`ALTER TABLE task_runs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`,
 	}
 	for _, q := range ddl {
 		if _, err := pool.Exec(ctx, q); err != nil {

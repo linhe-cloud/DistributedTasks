@@ -3,6 +3,7 @@ package repo
 import (
 	"DistributedTasks/internal/domain"
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -30,4 +31,24 @@ func GetLatestRunByTaskID(ctx context.Context, db *pgxpool.Pool, taskID uuid.UUI
 		return nil, err
 	}
 	return &tr, nil
+}
+
+// UpdateTaskRunStatus 更新任务执行记录的状态
+func UpdateTaskRunStatus(ctx context.Context, db *pgxpool.Pool, id uuid.UUID, status string) error {
+	_, err := db.Exec(ctx, `
+		UPDATE task_runs
+		SET status=$2, updated_at=NOW()
+		WHERE id=$1
+	`, id, status)
+	return err
+}
+
+// UpdateTaskRunNextRetryAt 更新任务执行记录的下次重试时间
+func UpdateTaskRunNextRetryAt(ctx context.Context, db *pgxpool.Pool, id uuid.UUID, next time.Time) error {
+	_, err := db.Exec(ctx, `
+        UPDATE task_runs
+        SET next_retry_at=$2
+        WHERE id=$1
+    `, id, next)
+	return err
 }
