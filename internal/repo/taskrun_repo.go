@@ -21,7 +21,7 @@ func InsertTaskRun(ctx context.Context, db *pgxpool.Pool, t *domain.TaskRun) err
 // GetLatestRunByTaskID 获取某个任务的最新执行记录
 func GetLatestRunByTaskID(ctx context.Context, db *pgxpool.Pool, taskID uuid.UUID) (*domain.TaskRun, error) {
 	row := db.QueryRow(ctx, `
-        SELECT id, task_id, attempt, status, worker_id, started_at, finished_at, result, next_retry_at, created_at
+        SELECT id, task_id, attempt, status, COALESCE(worker_id, ''), started_at, finished_at, result, next_retry_at, created_at
         FROM task_runs WHERE task_id=$1
         ORDER BY attempt DESC, created_at DESC
         LIMIT 1
@@ -47,8 +47,18 @@ func UpdateTaskRunStatus(ctx context.Context, db *pgxpool.Pool, id uuid.UUID, st
 func UpdateTaskRunNextRetryAt(ctx context.Context, db *pgxpool.Pool, id uuid.UUID, next time.Time) error {
 	_, err := db.Exec(ctx, `
         UPDATE task_runs
-        SET next_retry_at=$2
+        SET next_retry_at=$2, updated_at=NOW()
         WHERE id=$1
     `, id, next)
+	return err
+}
+
+// UpdateTaskRunResult 更新任务执行记录的结果
+func UpdateTaskRunResult(ctx context.Context, db *pgxpool.Pool, id uuid.UUID, result []byte) error {
+	_, err := db.Exec(ctx, `
+		UPDATE task_runs
+		SET result=$2, updated_at=NOW()
+		WHERE id=$1
+	`, id, result)
 	return err
 }

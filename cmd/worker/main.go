@@ -35,6 +35,7 @@ func main() {
 	}
 	defer rdb.Close()
 
+	workerID := uuid.NewString()
 	log.Printf("worker started, queues=%v", cfg.QueueNames)
 
 	// 延时队列搬运器（每两秒扫描一次）
@@ -43,8 +44,26 @@ func main() {
 		defer ticker.Stop()
 		for range ticker.C {
 			for _, q := range cfg.QueueNames {
-				if moved, err := queue.MoveDueDelayedToReady(context.Background(), rdb, q, 100); err == nil && moved > 0 {
+				lockKey := "lock:delayed_moved:" + q
+				// 尝试获取锁
+				got, err := queue.AcquireLock(context.Background(), rdb, lockKey, workerID, 5*time.Second)
+				if err != nil {
+					log.Printf("acquire lock failed: %v", err)
+					continue
+				}
+				if !got {
+					continue
+				}
+				// 移动到期的延迟任务到就绪队列
+				moved, err := queue.MoveDueDelayedToReadyAtomic(context.Background(), rdb, q, 100)
+				if err != nil {
+					log.Printf("move delayed failed: %v", err)
+				} else if moved > 0 {
 					log.Printf("delayed moved to ready: queue=%s count=%d", q, moved)
+				}
+				// 释放锁
+				if _, err := queue.ReleaseLock(context.Background(), rdb, lockKey, workerID); err != nil {
+					log.Printf("release lock failed: %v", err)
 				}
 			}
 		}
@@ -81,13 +100,16 @@ func main() {
 			Priority   int             `json:"priority"`
 			QueueName  string          `json:"queue_name"`
 			MaxRetries int             `json:"max_retries"`
+			Error      map[string]any  `json:"error,omitempty"`
 		}
 		if err := json.Unmarshal([]byte(val), &msg); err != nil {
 			log.Printf("json unmarshal failed: %v", err)
 			continue
 		}
 		// 最小演示失败策略：attempt==1 且 priority 为奇数则失败一次
-		// 写回 TaskRun 与 Task 状态
+
+		// 需要失败策略的业务实现
+
 		shouldFail := (msg.Attempt == 1 && msg.Priority%2 == 1)
 
 		if shouldFail {
@@ -96,19 +118,48 @@ func main() {
 			factor := 1 << (msg.Attempt - 1)
 			next := time.Now().Add(time.Duration(factor) * base)
 
-			// 标记当前 run 为 retrying + 设置 next_reetry_at
-			if err := repo.UpdateTaskRunStatus(context.Background(), pool, msg.TaskRunID, "succeeded"); err != nil {
-				log.Printf("update task_run failed: %v", err)
-				continue
+			// 标记当前 run 为 retrying + 设置 next_retry_at + 写失败原因
+			if err := repo.UpdateTaskRunStatus(context.Background(), pool, msg.TaskRunID, "retrying"); err != nil {
+				log.Printf("update task_run status failed: %v", err)
 			}
-			if err := repo.UpdateTaskStatus(context.Background(), pool, msg.TaskID, "completed"); err != nil {
-				log.Printf("update task status failed: %v", err)
-				continue
+			if err := repo.UpdateTaskRunNextRetryAt(context.Background(), pool, msg.TaskRunID, next); err != nil {
+				log.Printf("update next_retry_at failed: %v", err)
+			}
+			failInfo := map[string]any{
+				"reason":    "simulated_fail",
+				"attempt":   msg.Attempt,
+				"priority":  msg.Priority,
+				"timestamp": time.Now().Format(time.RFC3339),
+			}
+			binfo, _ := json.Marshal(failInfo)
+			if err := repo.UpdateTaskRunResult(context.Background(), pool, msg.TaskRunID, binfo); err != nil {
+				log.Printf("update run result failed: %v", err)
 			}
 
-			// 如果达到最大重试，则进入DLQ
+			// 如果达到最大重试，则进入DLQ (携带失败信息)
 			if msg.Attempt >= msg.MaxRetries {
-				if err := queue.EnqueueDLQ(context.Background(), rdb, msg.QueueName, val); err != nil {
+				type dlqMsg struct {
+					TaskRunID  uuid.UUID       `json:"task_run_id"`
+					TaskID     uuid.UUID       `json:"task_id"`
+					Attempt    int             `json:"attempt"`
+					Payload    json.RawMessage `json:"payload"`
+					Priority   int             `json:"priority"`
+					QueueName  string          `json:"queue_name"`
+					MaxRetries int             `json:"max_retries"`
+					Error      map[string]any  `json:"error"`
+				}
+				dm := dlqMsg{
+					TaskRunID:  msg.TaskRunID,
+					TaskID:     msg.TaskID,
+					Attempt:    msg.Attempt,
+					Payload:    msg.Payload,
+					Priority:   msg.Priority,
+					QueueName:  msg.QueueName,
+					MaxRetries: msg.MaxRetries,
+					Error:      failInfo,
+				}
+				dbuf, _ := json.Marshal(dm)
+				if err := queue.EnqueueDLQ(context.Background(), rdb, msg.QueueName, string(dbuf)); err != nil {
 					log.Printf("enqueue dlq failed: %v", err)
 				}
 				if err := repo.UpdateTaskRunStatus(context.Background(), pool, msg.TaskRunID, "failed"); err != nil {

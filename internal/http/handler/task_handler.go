@@ -120,7 +120,8 @@ func (h *Handler) ListDLQ(c *gin.Context) {
 
 // POST /api/v1/queues/:name/dlq/replay
 type ReplayDLQRequest struct {
-	Count int `json:"count"`
+	Count            int  `json:"count"`
+	OverridePriority *int `json:"override_priority"`
 }
 
 func (h *Handler) ReplayDLQ(c *gin.Context) {
@@ -129,7 +130,7 @@ func (h *Handler) ReplayDLQ(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil || req.Count <= 0 {
 		req.Count = 1
 	}
-	moved, err := queue.ReplayDLQCount(c.Request.Context(), h.rdb, name, req.Count)
+	moved, err := queue.ReplayDLQWithOverride(c.Request.Context(), h.rdb, name, req.Count, req.OverridePriority)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "replay dlq failed", "detail": err.Error()})
 		return

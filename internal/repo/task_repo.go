@@ -20,6 +20,7 @@ func FindActiveTaskByDedup(ctx context.Context, db *pgxpool.Pool, dedupKey strin
         LIMIT 1
 	`, dedupKey)
 	var t domain.Task
+	// 验证任务是否存在
 	if err := row.Scan(
 		&t.ID, &t.Name, &t.Type, &t.QueueName, &t.Priority, &t.Payload, &t.MaxRetries, &t.Status, &t.DedupKey,
 		&t.CreatedAt, &t.UpdatedAt,
