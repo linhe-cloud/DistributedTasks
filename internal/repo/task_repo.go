@@ -3,6 +3,7 @@ package repo
 import (
 	"DistributedTasks/internal/domain"
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -65,3 +66,25 @@ func UpdateTaskStatus(ctx context.Context, db *pgxpool.Pool, id uuid.UUID, statu
 	`, id, status)
 	return err
 }
+
+// UpdateTaskRunToRunning 将任务执行记录置为 running，写入 worker_id 与 started_at
+func UpdateTaskRunToRunning(ctx context.Context, db *pgxpool.Pool, id uuid.UUID, workerID string, startedAt time.Time) error {
+	_, err := db.Exec(ctx, `
+		UPDATE task_runs
+		SET status=$2, worker_id=$3, started_at=$4, updated_at=NOW()
+		WHERE id=$1
+	`, id, "running", workerID, startedAt)
+	return err
+}
+
+// UpdateTaskRunFinished 写入 finished_at（不改变 status）
+func UpdateTaskRunFinished(ctx context.Context, db *pgxpool.Pool, id uuid.UUID, finishedAt time.Time) error {
+	_, err := db.Exec(ctx, `
+		UPDATE task_runs
+		SET status=$2, updated_at=NOW()
+		WHERE id=$1
+	`, id, finishedAt)
+	return err
+}
+
+//

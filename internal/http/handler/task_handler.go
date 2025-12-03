@@ -94,6 +94,28 @@ func (h *Handler) GetTaskByID(c *gin.Context) {
 	}
 
 	resp := gin.H{"task": t}
+
+	displayStatus := t.Status
+	if tr != nil {
+		switch tr.Status {
+		case "running":
+			displayStatus = "running"
+		case "retrying":
+			displayStatus = "retrying"
+		case "succeeded":
+			displayStatus = "completed"
+		case "failed":
+			displayStatus = "failed"
+		case "queued":
+			displayStatus = "queued"
+		case "cancelled":
+			displayStatus = "cancelled"
+		default:
+			// 保持 task.Status
+		}
+	}
+	resp["display_status"] = displayStatus
+
 	if tr != nil {
 		resp["latest_run"] = tr
 	}
