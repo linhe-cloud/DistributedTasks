@@ -140,7 +140,7 @@ func (r *Runner) handle(ctx context.Context, msg Msg) {
 				Error:      failInfo,
 			}
 			dbuf, _ := json.Marshal(dm)
-			if err := queue.EnqueueDLQ(context.Background(), r.rdb, msg.QueueName, string(dbuf)); err != nil {
+			if err := queue.EnqueueDLQ(ctx, r.rdb, msg.QueueName, string(dbuf)); err != nil {
 				log.Printf("enqueue dlq failed: %v", err)
 			}
 			if err := repo.UpdateTaskRunStatus(ctx, r.db, msg.TaskRunID, "failed"); err != nil {
@@ -175,10 +175,12 @@ func (r *Runner) handle(ctx context.Context, msg Msg) {
 			MaxRetries: msg.MaxRetries,
 		}
 		b, _ := json.Marshal(newMsg)
-		if err := queue.EnqueueDelayed(context.Background(), r.rdb, msg.QueueName, string(b), next); err != nil {
+		if err := queue.EnqueueDelayed(ctx, r.rdb, msg.QueueName, string(b), next); err != nil {
 			log.Printf("enqueue delayed failed: %v", err)
 			return
 		}
+		// 当次运行已失败且已安排重试，结束当前处理
+		return
 	}
 
 	// 标记当前 run 为 succeeded

@@ -51,6 +51,15 @@ func EnsureSchema(ctx context.Context, pool *pgxpool.Pool) error {
         );`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_task_runs_task_attempt ON task_runs(task_id, attempt);`,
 		`ALTER TABLE task_runs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`,
+		`CREATE TABLE IF NOT EXISTS workers (
+            id UUID PRIMARY KEY,
+            name TEXT NOT NULL,
+            queues JSONB NOT NULL,
+            heartbeat_at TIMESTAMPTZ,
+            status TEXT NOT NULL DEFAULT 'online',
+            capacity INT NOT NULL DEFAULT 1,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );`,
 	}
 	for _, q := range ddl {
 		if _, err := pool.Exec(ctx, q); err != nil {

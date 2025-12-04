@@ -59,6 +59,9 @@ func main() {
 		// DLQ 管理
 		api.GET("/queues/:name/dlq", h.ListDLQ)
 		api.POST("/queues/:name/dlq/replay", h.ReplayDLQ)
+
+		// Worker 管理
+		api.GET("/workers", h.ListWorkers)
 	}
 
 	log.Printf("starting api server on :%s", cfg.HTTPPort)

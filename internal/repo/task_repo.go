@@ -3,6 +3,7 @@ package repo
 import (
 	"DistributedTasks/internal/domain"
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -81,10 +82,66 @@ func UpdateTaskRunToRunning(ctx context.Context, db *pgxpool.Pool, id uuid.UUID,
 func UpdateTaskRunFinished(ctx context.Context, db *pgxpool.Pool, id uuid.UUID, finishedAt time.Time) error {
 	_, err := db.Exec(ctx, `
 		UPDATE task_runs
-		SET status=$2, updated_at=NOW()
+		SET finished_at=$2, updated_at=NOW()
 		WHERE id=$1
 	`, id, finishedAt)
 	return err
 }
 
-//
+// WorkerRow 工作记录
+type WorkerRow struct {
+	ID          uuid.UUID
+	Name        string
+	Queues      []string
+	HeartbeatAt string
+	Status      string
+	Capacity    int
+}
+
+// InsertWorker 插入或更新 Worker 记录
+func InsertWorker(ctx context.Context, db *pgxpool.Pool, id uuid.UUID, name string, queues []string, capacity int) error {
+	qb, _ := json.Marshal(queues)
+	_, err := db.Exec(ctx, `
+		INSERT INTO workers (id, name, queues, heartbeat_at, status, capacity, created_at)
+        VALUES ($1, $2, $3, NOW(), 'online', $4, NOW())
+        ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, queues=EXCLUDED.queues, capacity=EXCLUDED.capacity, status='online', heartbeat_at=NOW()
+    `, id, name, qb, capacity)
+	return err
+}
+
+// UpdateWorkerHeartbeat 更新 Worker 心跳时间
+func UpdateWorkerHeartbeat(ctx context.Context, db *pgxpool.Pool, id uuid.UUID) error {
+	_, err := db.Exec(ctx, `
+		UPDATE workers
+		SET heartbeat_at=NOW(), status='online'
+		WHERE id=$1
+	`, id)
+	return err
+}
+
+// ListWorkers 列出所有 Worker 记录
+func ListWorkers(ctx context.Context, db *pgxpool.Pool) ([]*WorkerRow, error) {
+	rows, err := db.Query(ctx, `
+		SELECT id::text, name, queues, COALESCE(TO_CHAR(heartbeat_at, 'YYYY-MM-DD"T"HH24:MI:SSOF'), ''), status, capacity
+        FROM workers
+        ORDER BY heartbeat_at DESC NULLS LAST, created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*WorkerRow
+	for rows.Next() {
+		var w WorkerRow
+		var queuesRaw []byte
+		if err := rows.Scan(&w.ID, &w.Name, &queuesRaw, &w.HeartbeatAt, &w.Status, &w.Capacity); err != nil {
+			return nil, err
+		}
+		// 保留原始 JSON 作为interface{} 返回
+		var q interface{}
+		_ = json.Unmarshal(queuesRaw, &q)
+		w.Queues = q.([]string)
+		out = append(out, &w)
+	}
+	return out, nil
+}

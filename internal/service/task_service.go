@@ -100,8 +100,11 @@ func (s *TaskService) CreateTask(ctx context.Context, p CreateTaskParams) (uuid.
 		MaxRetries: ifZero(p.MaxRetries, 3),
 	}
 	b, _ := json.Marshal(msg)
-	if err := queue.EnqueueReady(ctx, s.rdb, p.QueueName, string(b)); err != nil {
-		return uuid.Nil, "", err
+	// 即时队列任务入队
+	if p.Type == "immediate" {
+		if err := queue.EnqueueReady(ctx, s.rdb, p.QueueName, string(b)); err != nil {
+			return uuid.Nil, "", err
+		}
 	}
 
 	return taskID, status, nil

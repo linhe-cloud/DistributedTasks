@@ -8,6 +8,7 @@ import (
 	"DistributedTasks/internal/config"
 	"DistributedTasks/internal/db"
 	"DistributedTasks/internal/queue"
+	"DistributedTasks/internal/repo"
 	"DistributedTasks/internal/worker"
 
 	"github.com/google/uuid"
@@ -32,6 +33,11 @@ func main() {
 	}
 	defer pool.Close()
 
+	// 确保 schema（含 workers） 存在
+	if err := db.EnsureSchema(initCtx, pool); err != nil {
+		log.Fatalf("ensure schema failed: %v", err)
+	}
+
 	rdb, err := queue.Connect(initCtx, cfg.RedisURL)
 	if err != nil {
 		log.Fatalf("redis init failed: %v", err)
@@ -40,6 +46,23 @@ func main() {
 
 	workerID := uuid.NewString()
 	log.Printf("worker started, queues=%v, workerID=%s, concurrency=%d", cfg.QueueNames, workerID, cfg.WorkerConcurrency)
+
+	// DB 中注册 Worker
+	if wid, err := uuid.Parse(workerID); err == nil {
+		_ = repo.InsertWorker(rootCtx, pool, wid, "worker-"+workerID, cfg.QueueNames, cfg.WorkerConcurrency)
+		// 周期性写 DB 心跳
+		go func() {
+			tkr := time.NewTicker(10 * time.Second)
+			for {
+				select {
+				case <-rootCtx.Done():
+					return
+				case <-tkr.C:
+					_ = repo.UpdateWorkerHeartbeat(rootCtx, pool, wid)
+				}
+			}
+		}()
+	}
 
 	// 心跳存在（30秒），租约刷新间隔（10秒）
 	go worker.StartHeartbeat(rootCtx, rdb, workerID, 30*time.Second, 10*time.Second)
