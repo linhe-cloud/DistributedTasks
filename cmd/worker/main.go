@@ -68,6 +68,8 @@ func main() {
 	go worker.StartHeartbeat(rootCtx, rdb, workerID, 30*time.Second, 10*time.Second)
 	// 延时队列搬运器（每两秒扫描一次）
 	go worker.StartDelayedMover(rootCtx, rdb, cfg.QueueNames, workerID, 2*time.Second)
+	// 租约清理器（每分钟扫描一次;阈值=2*租约TTL）
+	go worker.StartLeaseReaper(rootCtx, pool, rdb, 30*time.Second, 60*time.Second)
 
 	// 并发池与 Runner
 	p := worker.NewPool(cfg.WorkerConcurrency)

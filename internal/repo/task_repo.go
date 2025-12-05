@@ -78,7 +78,7 @@ func UpdateTaskRunToRunning(ctx context.Context, db *pgxpool.Pool, id uuid.UUID,
 	return err
 }
 
-// UpdateTaskRunFinished 写入 finished_at（不改变 status）
+// UpdateTaskRunFinished 更新任务的完成状态，写入 finished_at（不改变 status）
 func UpdateTaskRunFinished(ctx context.Context, db *pgxpool.Pool, id uuid.UUID, finishedAt time.Time) error {
 	_, err := db.Exec(ctx, `
 		UPDATE task_runs

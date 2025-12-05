@@ -62,3 +62,33 @@ func UpdateTaskRunResult(ctx context.Context, db *pgxpool.Pool, id uuid.UUID, re
 	`, id, result)
 	return err
 }
+
+// ListStaleRunningRuns 列出所有状态为 running 且 started_at 时间早于 before 的任务执行记录
+func ListStaleRunningRuns(ctx context.Context, db *pgxpool.Pool, before time.Time) ([]domain.TaskRun, error) {
+	rows, err := db.Query(ctx, `
+	SELECT 
+    id, task_id, attempt, status, 
+    COALESCE(worker_id, ''), 
+    started_at, finished_at, result, 
+    next_retry_at, created_at
+	FROM task_runs
+	WHERE 
+    status = 'running' 
+    AND started_at IS NOT NULL 
+    AND started_at < $1
+	ORDER BY started_at ASC
+	`, before)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.TaskRun
+	for rows.Next() {
+		var tr domain.TaskRun
+		if err := rows.Scan(&tr.ID, &tr.TaskID, &tr.Attempt, &tr.Status, &tr.WorkerID, &tr.StartedAt, &tr.FinishedAt, &tr.Result, &tr.NextRetryAt, &tr.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, tr)
+	}
+	return out, nil
+}
