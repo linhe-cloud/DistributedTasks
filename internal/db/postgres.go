@@ -6,7 +6,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func Init(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
+func Connect(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, err
@@ -60,6 +60,18 @@ func EnsureSchema(ctx context.Context, pool *pgxpool.Pool) error {
             capacity INT NOT NULL DEFAULT 1,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );`,
+		`ALTER TABLE workers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`,
+		`CREATE TABLE IF NOT EXISTS schedules (
+            id UUID PRIMARY KEY,
+            task_template_id UUID NOT NULL REFERENCES tasks(id),
+            cron_expr VARCHAR(128) NOT NULL,
+            timezone VARCHAR(64) NOT NULL DEFAULT 'UTC',
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            last_triggered_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );`,
+		`CREATE INDEX IF NOT EXISTS idx_schedules_enabled ON schedules(enabled);`,
 	}
 	for _, q := range ddl {
 		if _, err := pool.Exec(ctx, q); err != nil {

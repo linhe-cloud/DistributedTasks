@@ -50,6 +50,7 @@ func (r *Runner) HandleRawMessage(ctx context.Context, raw string) {
 		log.Printf("json unmarshal failed: %v", err)
 		return
 	}
+	_ = r.rdb.Incr(ctx, "metrics:worker:"+msg.QueueName+":consumed").Err()
 	r.handle(ctx, msg)
 }
 
@@ -149,6 +150,8 @@ func (r *Runner) handle(ctx context.Context, msg Msg) {
 			if err := repo.UpdateTaskStatus(ctx, r.db, msg.TaskID, "failed"); err != nil {
 				log.Printf("update task status failed: %v", err)
 			}
+			// 计数：失败
+			_ = r.rdb.Incr(ctx, "metrics:worker:"+msg.QueueName+":failed").Err()
 			log.Printf("task %s moved to DLQ", msg.TaskID.String())
 			return
 		}
@@ -179,6 +182,8 @@ func (r *Runner) handle(ctx context.Context, msg Msg) {
 			log.Printf("enqueue delayed failed: %v", err)
 			return
 		}
+		// 计数：安排重试
+		_ = r.rdb.Incr(ctx, "metrics:worker:"+msg.QueueName+":retried").Err()
 		// 当次运行已失败且已安排重试，结束当前处理
 		return
 	}
@@ -192,5 +197,7 @@ func (r *Runner) handle(ctx context.Context, msg Msg) {
 		log.Printf("update task status failed: %v", err)
 		return
 	}
+	// 计数：成功
+	_ = r.rdb.Incr(ctx, "metrics:worker:"+msg.QueueName+":succeeded").Err()
 	log.Printf("task %s succeeded", msg.TaskID.String())
 }

@@ -8,14 +8,14 @@ import (
 )
 
 type TaskRun struct {
-	ID          uuid.UUID       `json:"id"`
-	TaskID      uuid.UUID       `json:"task_id"`
-	Attempt     int             `json:"attempt"`
-	Status      string          `json:"status"`
-	WorkerID    string          `json:"worker_id"`
-	StartedAt   *time.Time      `json:"started_at"`
-	FinishedAt  *time.Time      `json:"finished_at"`
-	Result      json.RawMessage `json:"result"`
-	NextRetryAt *time.Time      `json:"next_retry_at"`
-	CreatedAt   time.Time       `json:"created_at"`
+	ID          uuid.UUID       `json:"id"`            // 唯一标识符ID
+	TaskID      uuid.UUID       `json:"task_id"`       // 任务ID
+	Attempt     int             `json:"attempt"`       // 尝试次数
+	Status      string          `json:"status"`        // 状态
+	WorkerID    string          `json:"worker_id"`     // 工作ID
+	StartedAt   *time.Time      `json:"started_at"`    // 开始时间
+	FinishedAt  *time.Time      `json:"finished_at"`   // 结束时间
+	Result      json.RawMessage `json:"result"`        // 结果
+	NextRetryAt *time.Time      `json:"next_retry_at"` // 下次重试时间
+	CreatedAt   time.Time       `json:"created_at"`    // 创建时间
 }

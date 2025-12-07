@@ -123,6 +123,11 @@ func (s *TaskService) GetTaskWithLatestRun(ctx context.Context, id uuid.UUID) (*
 	return t, tr, nil
 }
 
+// ListTaskRunsByTaskID 列出某个任务的所有执行记录
+func (s *TaskService) ListTaskRunsByTaskID(ctx context.Context, taskID uuid.UUID) ([]domain.TaskRun, error) {
+	return repo.ListTaskRunsByTaskID(ctx, s.db, taskID)
+}
+
 func ifZero(v, d int) int {
 	if v == 0 {
 		return d

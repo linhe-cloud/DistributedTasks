@@ -27,7 +27,7 @@ func main() {
 	defer initCancel()
 
 	//初始化依赖
-	pool, err := db.Init(initCtx, cfg.PostgresDSN)
+	pool, err := db.Connect(initCtx, cfg.PostgresDSN)
 	if err != nil {
 		log.Fatalf("postgres init failed: %v", err)
 	}

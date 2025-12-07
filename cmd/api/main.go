@@ -22,7 +22,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	pool, err := db.Init(ctx, cfg.PostgresDSN)
+	pool, err := db.Connect(ctx, cfg.PostgresDSN)
 	if err != nil {
 		log.Fatalf("postgres init failed: %v", err)
 	}
@@ -40,28 +40,47 @@ func main() {
 	}
 	defer rdb.Close()
 
-	// 组装服务与路由
+	// 组装服务
 	taskSvc := service.NewTaskService(pool, rdb)
+	scheduleSvc := service.NewScheduleService(pool)
+
+	// 组装 Handlers
+	taskH := handler.NewTaskHandler(taskSvc)
+	scheduleH := handler.NewScheduleHandler(scheduleSvc)
+	queueH := handler.NewQueueHandler(rdb)
+	workerH := handler.NewWorkerHandler(pool)
+	metricsH := handler.NewMetricsHandler(rdb)
+	healthH := handler.NewHealthHandler(pool, rdb)
 
 	engine := gin.Default()
-	h := handler.New(taskSvc, pool, rdb)
 
 	// 健康与就绪
-	engine.GET("/healthz", h.Healthz)
-	engine.GET("/readyz", h.Readyz)
+	engine.GET("/healthz", healthH.Healthz)
+	engine.GET("/readyz", healthH.Readyz)
 
-	// 最小任务 API
+	// API 路由
 	api := engine.Group("/api/v1")
 	{
-		api.POST("/tasks", h.CreateTask)
-		api.GET("/tasks/:id", h.GetTaskByID)
+		// 任务管理
+		api.POST("/tasks", taskH.CreateTask)
+		api.GET("/tasks/:id", taskH.GetTaskByID)
+		api.GET("/tasks/:id/runs", taskH.ListTaskRuns)
 
 		// DLQ 管理
-		api.GET("/queues/:name/dlq", h.ListDLQ)
-		api.POST("/queues/:name/dlq/replay", h.ReplayDLQ)
+		api.GET("/queues/:name/dlq", queueH.ListDLQ)
+		api.POST("/queues/:name/dlq/replay", queueH.ReplayDLQ)
 
 		// Worker 管理
-		api.GET("/workers", h.ListWorkers)
+		api.GET("/workers", workerH.ListWorkers)
+
+		// 监控指标
+		api.GET("/metrics/scheduler", metricsH.GetSchedulerMetrics)
+		api.GET("/metrics/worker", metricsH.GetWorkerMetrics)
+
+		// 定时调度管理
+		api.POST("/schedules", scheduleH.CreateSchedule)
+		api.GET("/schedules", scheduleH.ListSchedules)
+		api.POST("/schedules/:id/toggle", scheduleH.ToggleSchedule)
 	}
 
 	log.Printf("starting api server on :%s", cfg.HTTPPort)
